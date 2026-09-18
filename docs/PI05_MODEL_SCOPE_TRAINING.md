@@ -7,6 +7,7 @@
 3. 从 ModelScope 下载 `jemiywang/sec_robot_lingyu` 数据集；
 4. 为六个任务分别准备 SED TeleAvatar 数据配置；
 5. 使用各任务数据集内已有的 `norm_stats.json`，并分别从官方 `pi05_base` 开始 fine-tuning。
+6. 在远端训练机器登录 W&B，并将训练日志上传到指定账号或团队。
 
 代码仓库：<https://github.com/JemiyWang/lingyu_openpi>
 
@@ -146,7 +147,45 @@ find /data/datasets/sec_robot_lingyu \
 
 每个 LeRobot 数据集都应该有自己的 `meta/info.json`、`meta/tasks.jsonl`、`data/` 和 `videos/`。
 
-## 6. 重要：确认六个数据集的目录结构
+## 6. 配置 Weights & Biases（W&B）
+
+OpenPI 训练脚本已经启用 W&B：训练 loss、训练步数以及首批相机图像会在线记录到 W&B。这里必须在**远端训练机器**上登录你要使用的 W&B 账号；不要把 API Key 写入代码、shell 脚本、Git 仓库或聊天记录。
+
+先在远端机器执行：
+
+```bash
+cd /data/openpi
+
+# 在隐藏输入框中粘贴 W&B API Key
+uv run wandb login --relogin
+
+# 个人账号名或团队名，例如 your_wandb_username / your_wandb_team
+export WANDB_ENTITY="your_wandb_username_or_team"
+
+# 在线上传训练日志；不要设置为 offline
+export WANDB_MODE=online
+```
+
+`WANDB_ENTITY` 决定 run 上传到哪个 W&B 用户或团队。当前项目的默认 W&B project 是 `openpi`；如果要使用其他 project，在每次训练命令中加入：
+
+```bash
+--project-name=your_wandb_project
+```
+
+例如：
+
+```bash
+OPENPI_DATA_HOME=/data/cache/openpi \
+XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 \
+uv run scripts/train.py pi05_teleavatar \
+  --project-name=pi05_teleavatar \
+  --exp-name=pi05_teleavatar_collect_food \
+  --overwrite
+```
+
+如果登录的 API Key 属于个人账号，`WANDB_ENTITY` 填个人用户名；如果要上传到团队 project，API Key 对应的账号必须有该团队的写权限。W&B 只记录训练指标和图像，checkpoint 仍保存在训练机器本地，不会自动作为 W&B Artifact 上传。
+
+## 7. 重要：确认六个数据集的目录结构
 
 标准 OpenPI/LeRobot 数据加载器一次读取一个数据集根目录，要求该目录直接包含：
 
@@ -187,7 +226,7 @@ sec_robot_lingyu/
 
 建议先完成一个任务的 smoke test，再按相同流程依次训练剩余五个任务。六个任务不需要合并；每次只修改 `pi05_teleavatar` 配置中的当前任务路径，然后从 `pi05_base` 重新开始训练。
 
-## 7. SED 数据格式和代码检查
+## 8. SED 数据格式和代码检查
 
 该仓库中已经包含 SED 适配代码：
 
@@ -265,7 +304,7 @@ TrainConfig(
 
 同时确认 SED 数据字段已经由仓库中的适配代码正确映射到 `LeRobotTeleavatarDataConfig` 所使用的输入字段。
 
-## 8. 使用数据集内已有的 normalization statistics
+## 9. 使用数据集内已有的 normalization statistics
 
 六个任务的 `norm_stats.json` 已经随数据集上传，因此本文流程不再运行 `compute_norm_stats.py`。
 
@@ -311,7 +350,7 @@ test -f /data/datasets/sec_robot_lingyu/collect_food/norm_stats.json \
 
 如果出现 `Normalization stats not found`，优先检查 `assets_dir`、`asset_id` 和当前任务目录，不要重新计算或混用其他任务的统计文件。
 
-## 9. 分别启动六次 π0.5 fine-tuning
+## 10. 分别启动六次 π0.5 fine-tuning
 
 以 `collect_food` 为例：
 
@@ -376,7 +415,7 @@ gs://openpi-assets/checkpoints/pi05_base/params
 
 官方 OpenPI 的通用示例通常会先运行 `compute_norm_stats.py`，但本项目的六个数据集已经包含各自的 `norm_stats.json`，所以这里直接使用数据集内已有统计量；`--overwrite` 会覆盖同名实验目录下的已有结果。训练流程参考官方 [Fine-Tuning Base Models on Your Own Data](https://github.com/Physical-Intelligence/openpi#fine-tuning-base-models-on-your-own-data)。
 
-## 10. 训练过程中的常见问题
+## 11. 训练过程中的常见问题
 
 ### 显存不足
 
@@ -421,6 +460,8 @@ du -sh /data/cache/openpi /data/datasets/sec_robot_lingyu /data/openpi/checkpoin
 登录 ModelScope
         ↓
 下载 jemiywang/sec_robot_lingyu
+        ↓
+登录 W&B 并设置 `WANDB_ENTITY`、`WANDB_MODE=online`
         ↓
 检查六个 LeRobot 数据集的目录结构
         ↓
