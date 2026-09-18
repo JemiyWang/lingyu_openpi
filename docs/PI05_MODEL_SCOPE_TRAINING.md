@@ -158,7 +158,7 @@ cd /data/openpi
 
 # 在隐藏输入框中粘贴 W&B API Key
 uv run wandb login --relogin
-
+#直接读取key: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
 # 个人账号名或团队名，例如 your_wandb_username / your_wandb_team
 export WANDB_ENTITY="your_wandb_username_or_team"
 
@@ -195,21 +195,22 @@ uv run scripts/train.py pi05_teleavatar \
 <dataset_root>/videos/...
 ```
 
-按照此前的上传方式，`sec_robot_lingyu` 很可能是：
+已检查 ModelScope 远端 `jemiywang/sec_robot_lingyu` 的实际文件树。仓库根目录包含说明文件和六个任务目录，六个任务目录各自都是独立的 LeRobot 数据集：
 
 ```text
 sec_robot_lingyu/
-├── meta/                 # 之前的 pick_up_paper_rolls 可能在这里
-├── data/
-├── videos/
+├── .gitattributes
+├── README.md
+├── dataset_infos.json
 ├── collect_food/
 ├── fold_towels/
 ├── pick_flowers/
+├── pick_up_paper_rolls/
 ├── pick_up_trash/
 └── stack_blocks/
 ```
 
-这种结构不会被 OpenPI 自动识别为一个包含六个任务的数据集。本文采用“六个任务分别训练六个模型”的方式，不合并数据集，也不在任务之间续训。
+每个任务目录直接包含自己的 `meta/info.json`、`meta/tasks.jsonl`、`data/`、`videos/` 和 `norm_stats.json`。因此训练时不要把 `/data/datasets/sec_robot_lingyu` 这个父目录作为 `repo_id`，而要指向对应的任务子目录。本文采用“六个任务分别训练六个模型”的方式，不合并数据集，也不在任务之间续训。
 
 每次训练的 `repo_id` 必须指向当前任务自己的 LeRobot 根目录：
 
@@ -218,11 +219,11 @@ sec_robot_lingyu/
 | `collect_food` | `/data/datasets/sec_robot_lingyu/collect_food` |
 | `fold_towels` | `/data/datasets/sec_robot_lingyu/fold_towels` |
 | `pick_flowers` | `/data/datasets/sec_robot_lingyu/pick_flowers` |
-| `pick_up_paper_rolls` | `/data/datasets/sec_robot_lingyu/pick_up_paper_rolls`，或者当前上传布局中直接包含 `meta/info.json` 的仓库根目录 |
+| `pick_up_paper_rolls` | `/data/datasets/sec_robot_lingyu/pick_up_paper_rolls` |
 | `pick_up_trash` | `/data/datasets/sec_robot_lingyu/pick_up_trash` |
 | `stack_blocks` | `/data/datasets/sec_robot_lingyu/stack_blocks` |
 
-如果某个路径下没有 `meta/info.json`，不要开始训练；先确认该任务在 ModelScope 中的实际目录位置。
+如果某个任务目录下没有 `meta/info.json`，不要开始训练；先确认数据是否完整下载。
 
 建议先完成一个任务的 smoke test，再按相同流程依次训练剩余五个任务。六个任务不需要合并；每次只修改 `pi05_teleavatar` 配置中的当前任务路径，然后从 `pi05_base` 重新开始训练。
 
@@ -335,11 +336,12 @@ assets=AssetsConfig(
 collect_food       -> sec_robot_lingyu/collect_food
 fold_towels        -> sec_robot_lingyu/fold_towels
 pick_flowers       -> sec_robot_lingyu/pick_flowers
+pick_up_paper_rolls -> sec_robot_lingyu/pick_up_paper_rolls
 pick_up_trash      -> sec_robot_lingyu/pick_up_trash
 stack_blocks       -> sec_robot_lingyu/stack_blocks
 ```
 
-`pick_up_paper_rolls` 需要根据下载后的实际目录确认；如果它位于仓库根目录，则 `asset_id` 应指向 `sec_robot_lingyu`，如果位于子目录，则指向 `sec_robot_lingyu/pick_up_paper_rolls`。
+六个任务的 `asset_id` 都指向对应的任务子目录；`pick_up_paper_rolls` 使用 `sec_robot_lingyu/pick_up_paper_rolls`，不使用仓库根目录。
 
 训练前检查当前任务的统计文件：
 
