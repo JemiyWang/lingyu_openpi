@@ -140,6 +140,14 @@ def create_torch_dataset(
     data_config: _config.DataConfig, action_horizon: int, model_config: _model.BaseModelConfig
 ) -> Dataset:
     """Create a dataset for training."""
+    if data_config.use_sed_video_loader:
+        # Import lazily because the SED loader imports this module for the
+        # shared TransformedDataset wrapper. This keeps the legacy loader
+        # usable without introducing an import cycle at module load time.
+        from openpi.sed_robot_data_loader import create_torch_dataset as create_sed_torch_dataset
+
+        return create_sed_torch_dataset(data_config, action_horizon, model_config)
+
     repo_id = data_config.repo_id
     if repo_id is None:
         raise ValueError("Repo ID is not set. Cannot create dataset.")

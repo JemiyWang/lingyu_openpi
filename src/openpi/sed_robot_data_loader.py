@@ -23,7 +23,6 @@ from openpi.models import model as _model
 from openpi.training import config as _config
 from openpi.training import data_loader as _data_loader
 
-
 SED_VIDEO_TOLERANCE_S = 0.05
 
 

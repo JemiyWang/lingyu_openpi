@@ -238,7 +238,7 @@ sec_robot_lingyu/
 
 - `sed_robot_adapter.py` 负责把 SED 的相机、state 和 action 字段转换成 PI05 所需的输入格式；
 - `sed_robot_data_loader.py` 负责 SED 视频读取、时间戳容差和解码性能处理；
-- 正式训练必须让 `name="pi05_teleavatar"` 使用 `SedRobotDataConfig` 和 SED 数据加载器；
+- 正式训练必须让 `name="pi05_teleavatar"` 使用 `LeRobotTeleavatarDataConfig(use_sed_schema=True)`，由该配置接入上述 SED 适配器和数据加载器；
 - 不得改用 `pi05_sed_robot`、`train_sed_robot_lora.py` 或任何 LoRA 配置来绕过这条路径。
 
 当前 SED 数据格式是：
@@ -266,14 +266,15 @@ rg -n "pi05_teleavatar|sed_robot_adapter|sed_robot_data_loader|create_torch_data
   src/openpi
 ```
 
-检查 `pi05_teleavatar` 的配置时，必须确认它的 `data` 工厂已经是 `SedRobotDataConfig`，而不是标准的 `LeRobotTeleavatarDataConfig`：
+检查 `pi05_teleavatar` 的配置时，必须确认它仍然使用配置名 `pi05_teleavatar`，并且其 `LeRobotTeleavatarDataConfig` 已开启 `use_sed_schema=True`：
 
 ```bash
 rg -n -A25 'name="pi05_teleavatar"' src/openpi/training/config.py
-rg -n 'SedRobotDataConfig|sed_robot_data_loader' src/openpi scripts
+rg -n 'use_sed_schema=True|use_sed_video_loader|sed_robot_adapter|sed_robot_data_loader' \
+  src/openpi scripts
 ```
 
-如果前一条检查仍显示 `data=LeRobotTeleavatarDataConfig(...)`，说明 SED 适配尚未接入 `pi05_teleavatar`，不要直接开始正式训练。
+如果 `pi05_teleavatar` 没有显示 `use_sed_schema=True`，说明 SED 适配尚未接入该配置，不要直接开始正式训练。
 
 注意：六次训练都必须使用仓库中已有的 `pi05_teleavatar` 配置名。修改数据路径后，还要确认 `sed_robot_adapter.py` 和 `sed_robot_data_loader.py` 已经接入该配置的训练路径，并且 SED 数据字段已经映射到 PI05 的标准输入字段。不要为了不同任务新建配置名称。
 
@@ -296,7 +297,7 @@ TrainConfig(
         action_horizon=30,
     ),
 
-    data=SedRobotDataConfig(
+    data=LeRobotTeleavatarDataConfig(
         repo_id="/data/datasets/sec_robot_lingyu/collect_food",
         assets=AssetsConfig(
             # assets_dir 是数据集父目录，asset_id 指向当前任务目录
@@ -304,7 +305,8 @@ TrainConfig(
             asset_id="sec_robot_lingyu/collect_food",
         ),
         default_prompt="Collect the food.",
-        ),
+        use_sed_schema=True,
+    ),
 
     weight_loader=weight_loaders.CheckpointWeightLoader(
         "gs://openpi-assets/checkpoints/pi05_base/params"
@@ -316,7 +318,7 @@ TrainConfig(
 
 每个任务都必须保留上面的 `pi05_base` 权重加载器，不要把前一个任务的训练 checkpoint 填到下一个任务；六个训练是六次独立初始化。
 
-同时确认 SED 数据字段已经由仓库中的适配代码正确映射到 PI05 的标准输入字段，而不是继续使用标准 `LeRobotTeleavatarDataConfig` 的旧 TeleAvatar 字段映射。
+同时确认 `LeRobotTeleavatarDataConfig(use_sed_schema=True)` 已经通过仓库中的适配代码把 SED 数据字段映射到 PI05 的标准输入字段，而不是使用旧 TeleAvatar 字段映射。
 
 ## 9. 使用数据集内已有的 normalization statistics
 

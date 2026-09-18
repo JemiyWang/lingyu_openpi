@@ -98,6 +98,10 @@ class DataConfig:
     # Path to the data filter file for DROID dataset
     filter_dict_path: str | None = None
 
+    # Use the SED-specific LeRobot video loader. This is enabled by the SED
+    # TeleAvatar data configuration and kept false for all legacy datasets.
+    use_sed_video_loader: bool = False
+
 
 class GroupFactory(Protocol):
     def __call__(self, model_config: _model.BaseModelConfig) -> _transforms.Group:
@@ -361,33 +365,67 @@ class LeRobotTeleavatarDataConfig(DataConfigFactory):
     """
     Config for training on Teleavatar dual-arm robot dataset.
 
-    This config handles the 48-dimensional state (joint positions, velocities, efforts)
-    and 3 camera feeds (left_color, right_color, head_color).
+    By default this handles the legacy 48-dimensional TeleAvatar schema. When
+    ``use_sed_schema`` is enabled, the same config name can train on the SED
+    16-dimensional schema while preserving the ``pi05_teleavatar`` config name.
     """
     use_delta_joint_actions: bool = False
+    use_sed_schema: bool = False
+    default_prompt: str | None = None
 
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
-        # Repack transform to match dataset keys to inference keys
-        repack_transform = _transforms.Group(
-            inputs=[
-                _transforms.RepackTransform(
-                    {
-                        "observation/images/left_color": "observation.images.left_color",
-                        "observation/images/right_color": "observation.images.right_color",
-                        "observation/images/head_camera": "observation.images.chest_camera",  # use chest_camera data
-                        "observation/state": "observation.state",
-                        "action": "action",  # Keep action as action
-                    }
-                )
-            ]
-        )
+        if self.use_sed_schema:
+            # Imported lazily to keep the legacy config module importable and
+            # avoid a circular import through the SED adapter's config types.
+            from openpi.sed_robot_adapter import SedTeleAvatarInputs
+            from openpi.sed_robot_adapter import SedTeleAvatarOutputs
 
-        # Data transforms for teleavatar policy
-        data_transforms = _transforms.Group(
-            inputs=[teleavatar_policy.TeleavatarInputs(model_type=model_config.model_type)],
-            outputs=[teleavatar_policy.TeleavatarOutputs()],
-        )
+            repack_transform = _transforms.Group(
+                inputs=[
+                    _transforms.RepackTransform(
+                        {
+                            "images": {
+                                "top_head": "observation.images.top_head",
+                                "hand_left": "observation.images.hand_left",
+                                "hand_right": "observation.images.hand_right",
+                            },
+                            "state": "observation.state",
+                            "actions": "action",
+                        }
+                    )
+                ]
+            )
+            data_transforms = _transforms.Group(
+                inputs=[
+                    SedTeleAvatarInputs(
+                        action_dim=model_config.action_dim,
+                        model_type=model_config.model_type,
+                    )
+                ],
+                outputs=[SedTeleAvatarOutputs()],
+            )
+        else:
+            # Repack transform to match dataset keys to inference keys.
+            repack_transform = _transforms.Group(
+                inputs=[
+                    _transforms.RepackTransform(
+                        {
+                            "observation/images/left_color": "observation.images.left_color",
+                            "observation/images/right_color": "observation.images.right_color",
+                            "observation/images/head_camera": "observation.images.chest_camera",  # use chest_camera data
+                            "observation/state": "observation.state",
+                            "action": "action",  # Keep action as action
+                        }
+                    )
+                ]
+            )
+
+            # Data transforms for the legacy TeleAvatar policy.
+            data_transforms = _transforms.Group(
+                inputs=[teleavatar_policy.TeleavatarInputs(model_type=model_config.model_type)],
+                outputs=[teleavatar_policy.TeleavatarOutputs()],
+            )
 
         # Apply delta actions if requested (for joint positions/velocities, not gripper efforts)
         # Actions are 16 dimensions: 7 left arm joints, 1 left gripper, 7 right arm joints, 1 right gripper
@@ -400,14 +438,15 @@ class LeRobotTeleavatarDataConfig(DataConfigFactory):
                 outputs=[_transforms.AbsoluteActions(delta_action_mask)],
             )
 
-        # Model transforms
-        model_transforms = ModelTransformFactory()(model_config)
+        # Model transforms are shared by legacy TeleAvatar and SED TeleAvatar.
+        model_transforms = ModelTransformFactory(default_prompt=self.default_prompt)(model_config)
 
         return dataclasses.replace(
             self.create_base_config(assets_dirs, model_config),
             repack_transforms=repack_transform,
             data_transforms=data_transforms,
             model_transforms=model_transforms,
+            use_sed_video_loader=self.use_sed_schema,
         )
 
 
@@ -887,16 +926,18 @@ _CONFIGS = [
             correlation_beta=0.5,
         ),
         data=LeRobotTeleavatarDataConfig(
-            repo_id="/mnt/mnt/data/lingyu/lingyu_datasets/pick_paper_all_merged",
+            # SED task directory; change this path for each independent task.
+            repo_id="/data/datasets/sec_robot_lingyu/collect_food",
             assets=AssetsConfig(
-                assets_dir="/mnt/mnt/data/lingyu/lingyu_datasets",
-                asset_id="pick_paper_all_merged",
+                assets_dir="/data/datasets",
+                asset_id="sec_robot_lingyu/collect_food",
             ),
             base_config=DataConfig(
                 prompt_from_task=True,  # No prompts in teleavatar dataset
                 action_sequence_keys=("action",)  # Use 'action' not 'actions'
             ),
             use_delta_joint_actions=False,
+            use_sed_schema=True,
         ),
         batch_size=64,
         lr_schedule=_optimizer.CosineDecaySchedule(
@@ -907,7 +948,7 @@ _CONFIGS = [
         ),
         optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
         ema_decay=0.999,
-        weight_loader=weight_loaders.CheckpointWeightLoader("/mnt/mnt/data/FPF_workspace/checkpoints/pi05_base/params"),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
         num_train_steps=20_000,
     ),
     TrainConfig(

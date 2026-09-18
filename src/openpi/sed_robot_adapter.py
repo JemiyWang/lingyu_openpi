@@ -10,9 +10,10 @@ configuration files.  The SED dataset uses the newer 16-D schema:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import dataclasses
 import pathlib
-from typing import ClassVar, Sequence
+from typing import ClassVar
 
 import numpy as np
 import torch
@@ -147,4 +148,5 @@ class SedRobotDataConfig(_config.DataConfigFactory):
             data_transforms=data_transforms,
             model_transforms=model_transforms,
             action_sequence_keys=self.action_sequence_keys,
+            use_sed_video_loader=True,
         )
