@@ -369,6 +369,55 @@ test -f /data/datasets/sec_robot_lingyu/collect_food/norm_stats.json \
 
 ## 10. 分别启动六次 π0.5 fine-tuning
 
+重要：下面的训练命令**不会自动切换数据集**。由于你可以把 ModelScope 数据集下载到任意目录，因此每次启动一个新任务前，都必须先打开 `src/openpi/training/config.py`，找到 `name="pi05_teleavatar"`，把当前任务的 `repo_id`、`assets_dir` 和 `asset_id` 一起修改为对应路径。
+
+例如，如果数据集下载根目录是 `/data/datasets/sec_robot_lingyu`，训练 `collect_food` 时应设置为：
+
+```python
+repo_id="/data/datasets/sec_robot_lingyu/collect_food"
+assets=AssetsConfig(
+    assets_dir="/data/datasets",
+    asset_id="sec_robot_lingyu/collect_food",
+)
+```
+
+如果你把数据集下载到了其他位置，例如 `/mnt/datasets/sec_robot_lingyu`，则必须相应改成：
+
+```python
+repo_id="/mnt/datasets/sec_robot_lingyu/collect_food"
+assets=AssetsConfig(
+    assets_dir="/mnt/datasets",
+    asset_id="sec_robot_lingyu/collect_food",
+)
+```
+
+六个任务的修改关系如下。设：
+
+- `<数据集根目录>` 是本地包含六个任务子目录的目录，例如 `/mnt/datasets/sec_robot_lingyu`；
+- `<数据集父目录>` 是它的父目录，例如 `/mnt/datasets`；
+- `<数据集目录名>` 是数据集根目录的目录名，例如 `sec_robot_lingyu`。
+
+`repo_id` 必须指向当前任务中直接包含 `meta/info.json` 的目录；`assets_dir` 是数据集父目录；`asset_id` 是相对于 `assets_dir` 的路径，必须指向当前任务的 `norm_stats.json` 所在目录。
+
+| 当前任务 | `repo_id` | `assets_dir` | `asset_id` |
+|---|---|---|---|
+| `collect_food` | `<数据集根目录>/collect_food` | `<数据集父目录>` | `<数据集目录名>/collect_food` |
+| `fold_towels` | `<数据集根目录>/fold_towels` | `<数据集父目录>` | `<数据集目录名>/fold_towels` |
+| `pick_flowers` | `<数据集根目录>/pick_flowers` | `<数据集父目录>` | `<数据集目录名>/pick_flowers` |
+| `pick_up_paper_rolls` | `<数据集根目录>/pick_up_paper_rolls` | `<数据集父目录>` | `<数据集目录名>/pick_up_paper_rolls` |
+| `pick_up_trash` | `<数据集根目录>/pick_up_trash` | `<数据集父目录>` | `<数据集目录名>/pick_up_trash` |
+| `stack_blocks` | `<数据集根目录>/stack_blocks` | `<数据集父目录>` | `<数据集目录名>/stack_blocks` |
+
+其中，`repo_id` 和 `assets_dir` 是本地实际路径，必须根据另一台电脑上的下载位置填写；`asset_id` 是相对于 `assets_dir` 的路径。例如数据集下载到 `/mnt/datasets/sec_robot_lingyu` 时，`collect_food` 应使用：
+
+```python
+repo_id="/mnt/datasets/sec_robot_lingyu/collect_food"
+assets_dir="/mnt/datasets"
+asset_id="sec_robot_lingyu/collect_food"
+```
+
+确认当前任务的三项路径已经修改并且 `norm_stats.json` 存在后，再执行对应的训练命令。
+
 以 `collect_food` 为例：
 
 ```bash
@@ -382,7 +431,7 @@ uv run scripts/train.py \
   --overwrite
 ```
 
-其他五个任务分别执行对应配置：
+训练其他五个任务时，不能只修改 `--exp-name`。每次都要先把上表中的当前任务路径写入 `pi05_teleavatar` 配置，再执行对应命令：
 
 ```bash
 OPENPI_DATA_HOME=/data/cache/openpi \
