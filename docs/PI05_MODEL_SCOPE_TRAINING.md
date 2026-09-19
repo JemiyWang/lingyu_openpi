@@ -125,7 +125,6 @@ python3 -m pip install -U modelscope-hub
 ms-hub login
 ms-hub whoami
 ```
-
 下载数据集到本地：
 
 ```bash
@@ -369,7 +368,9 @@ test -f /data/datasets/sec_robot_lingyu/collect_food/norm_stats.json \
 
 ## 10. 分别启动六次 π0.5 fine-tuning
 
-重要：下面的训练命令**不会自动切换数据集**。由于你可以把 ModelScope 数据集下载到任意目录，因此每次启动一个新任务前，都必须先打开 `src/openpi/training/config.py`，找到 `name="pi05_teleavatar"`，把当前任务的 `repo_id`、`assets_dir` 和 `asset_id` 一起修改为对应路径。
+重要：下面的训练命令**不会自动切换数据集，也不会自动发现基础模型**。每次启动一个新任务前，必须根据当前服务器实际目录修改表格中的 `repo_id`、`assets_dir` 和 `asset_id`，并同步修改命令里的 `--weight_loader.params_path`。`repo_id` 必须指向直接包含 `meta/info.json` 的当前任务目录，`asset_id` 必须指向同一任务的 `norm_stats.json`；基础模型路径必须是官方 **pi05** 的 `params`，不能填其他任务的 checkpoint。
+
+SED 数据没有可用的 LeRobot task prompt，因此 `pi05_teleavatar` 配置还必须使用 `base_config=DataConfig(prompt_from_task=False)`，并在 `LeRobotTeleavatarDataConfig` 中提供一个非空的 `default_prompt`（例如当前任务名）；否则数据加载会在 `Prompt is required` 处停止。
 
 例如，如果数据集下载根目录是 `/data/datasets/sec_robot_lingyu`，训练 `collect_food` 时应设置为：
 
@@ -418,65 +419,167 @@ asset_id="sec_robot_lingyu/collect_food"
 
 确认当前任务的三项路径已经修改并且 `norm_stats.json` 存在后，再执行对应的训练命令。
 
-以 `collect_food` 为例：
+### 六次独立训练命令
+
+下面的命令直接参照仓库中的 `train_pick_up_paper_pi05_700data.sh`。每次执行一条命令即可。执行某个任务前，先根据上表修改 `src/openpi/training/config.py` 中 `pi05_teleavatar` 的 `repo_id`、`assets_dir` 和 `asset_id`，使它们指向当前任务的数据；同时确认命令中的 `--weight_loader.params_path` 指向当前机器上的 **pi05** 基础模型 `params` 目录。不要把基础模型路径改成其他任务的 checkpoint。
+
+这里的 `batch_size=64` 是全局 batch size，在 8 张卡上每卡 8；如果 GPU 数量变化，`--fsdp_devices` 和 batch size 必须一起调整，并保证 batch size 能被设备数整除。W&B 登录使用交互式 `wandb login`，不要把个人 token 写入文档。
+
+`collect_food`：
 
 ```bash
-cd /data/openpi
+cd /mnt/mnt/data/lingyu/openpi
+source ./.venv/bin/activate
+wandb login
 
-OPENPI_DATA_HOME=/data/cache/openpi \
-XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 \
-uv run scripts/train.py \
-  pi05_teleavatar \
-  --exp-name=pi05_teleavatar_collect_food \
-  --overwrite
+# 防止 OpenBLAS/OMP 多线程初始化冲突导致 Segmentation fault
+export OPENBLAS_NUM_THREADS=1
+export OMP_NUM_THREADS=1
+export XLA_PYTHON_CLIENT_MEM_FRACTION=0.9
+
+python scripts/train.py pi05_teleavatar \
+    --exp_name=finetune_collect_food_pi05 \
+    --batch_size=64 \
+    --num_train_steps=20000 \
+    --save_interval=2000 \
+    --weight_loader.params_path=/mnt/mnt/data/FPF_workspace/checkpoints/pi05_base/params \
+    --num_workers=32 \
+    --fsdp_devices=8 \
+    --overwrite
 ```
 
-训练其他五个任务时，不能只修改 `--exp-name`。每次都要先把上表中的当前任务路径写入 `pi05_teleavatar` 配置，再执行对应命令：
+`fold_towels`：
 
 ```bash
-OPENPI_DATA_HOME=/data/cache/openpi \
-XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 \
-uv run scripts/train.py pi05_teleavatar \
-  --exp-name=pi05_teleavatar_fold_towels --overwrite
+cd /mnt/mnt/data/lingyu/openpi
+source ./.venv/bin/activate
+wandb login
 
-OPENPI_DATA_HOME=/data/cache/openpi \
-XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 \
-uv run scripts/train.py pi05_teleavatar \
-  --exp-name=pi05_teleavatar_pick_flowers --overwrite
+# 防止 OpenBLAS/OMP 多线程初始化冲突导致 Segmentation fault
+export OPENBLAS_NUM_THREADS=1
+export OMP_NUM_THREADS=1
+export XLA_PYTHON_CLIENT_MEM_FRACTION=0.9
 
-OPENPI_DATA_HOME=/data/cache/openpi \
-XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 \
-uv run scripts/train.py pi05_teleavatar \
-  --exp-name=pi05_teleavatar_pick_up_paper_rolls --overwrite
-
-OPENPI_DATA_HOME=/data/cache/openpi \
-XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 \
-uv run scripts/train.py pi05_teleavatar \
-  --exp-name=pi05_teleavatar_pick_up_trash --overwrite
-
-OPENPI_DATA_HOME=/data/cache/openpi \
-XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 \
-uv run scripts/train.py pi05_teleavatar \
-  --exp-name=pi05_teleavatar_stack_blocks --overwrite
+python scripts/train.py pi05_teleavatar \
+    --exp_name=finetune_fold_towels_pi05 \
+    --batch_size=64 \
+    --num_train_steps=20000 \
+    --save_interval=2000 \
+    --weight_loader.params_path=/mnt/mnt/data/FPF_workspace/checkpoints/pi05_base/params \
+    --num_workers=32 \
+    --fsdp_devices=8 \
+    --overwrite
 ```
 
-以上六条命令是六次独立训练。每次训练都从：
+`pick_flowers`：
 
-```text
-gs://openpi-assets/checkpoints/pi05_base/params
+```bash
+cd /mnt/mnt/data/lingyu/openpi
+source ./.venv/bin/activate
+wandb login
+
+# 防止 OpenBLAS/OMP 多线程初始化冲突导致 Segmentation fault
+export OPENBLAS_NUM_THREADS=1
+export OMP_NUM_THREADS=1
+export XLA_PYTHON_CLIENT_MEM_FRACTION=0.9
+
+python scripts/train.py pi05_teleavatar \
+    --exp_name=finetune_pick_flowers_pi05 \
+    --batch_size=64 \
+    --num_train_steps=20000 \
+    --save_interval=2000 \
+    --weight_loader.params_path=/mnt/mnt/data/FPF_workspace/checkpoints/pi05_base/params \
+    --num_workers=32 \
+    --fsdp_devices=8 \
+    --overwrite
 ```
 
-加载初始权重，不从前一个任务的 checkpoint 继续训练，也不使用前一个任务的 `resume`。
+`pick_up_paper_rolls`：
 
-训练日志和 checkpoint 默认分别保存在：
+```bash
+cd /mnt/mnt/data/lingyu/openpi
+source ./.venv/bin/activate
+wandb login
+
+# 防止 OpenBLAS/OMP 多线程初始化冲突导致 Segmentation fault
+export OPENBLAS_NUM_THREADS=1
+export OMP_NUM_THREADS=1
+export XLA_PYTHON_CLIENT_MEM_FRACTION=0.9
+
+python scripts/train.py pi05_teleavatar \
+    --exp_name=finetune_pick_up_paper_rolls_pi05 \
+    --batch_size=64 \
+    --num_train_steps=20000 \
+    --save_interval=2000 \
+    --weight_loader.params_path=/mnt/mnt/data/FPF_workspace/checkpoints/pi05_base/params \
+    --num_workers=32 \
+    --fsdp_devices=8 \
+    --overwrite
+```
+
+`pick_up_trash`：
+
+```bash
+cd /mnt/mnt/data/lingyu/openpi
+source ./.venv/bin/activate
+wandb login
+
+# 防止 OpenBLAS/OMP 多线程初始化冲突导致 Segmentation fault
+export OPENBLAS_NUM_THREADS=1
+export OMP_NUM_THREADS=1
+export XLA_PYTHON_CLIENT_MEM_FRACTION=0.9
+
+python scripts/train.py pi05_teleavatar \
+    --exp_name=finetune_pick_up_trash_pi05 \
+    --batch_size=64 \
+    --num_train_steps=20000 \
+    --save_interval=2000 \
+    --weight_loader.params_path=/mnt/mnt/data/FPF_workspace/checkpoints/pi05_base/params \
+    --num_workers=32 \
+    --fsdp_devices=8 \
+    --overwrite
+```
+
+`stack_blocks`：
+
+```bash
+cd /mnt/mnt/data/lingyu/openpi
+source ./.venv/bin/activate
+wandb login
+
+# 防止 OpenBLAS/OMP 多线程初始化冲突导致 Segmentation fault
+export OPENBLAS_NUM_THREADS=1
+export OMP_NUM_THREADS=1
+export XLA_PYTHON_CLIENT_MEM_FRACTION=0.9
+
+python scripts/train.py pi05_teleavatar \
+    --exp_name=finetune_stack_blocks_pi05 \
+    --batch_size=64 \
+    --num_train_steps=20000 \
+    --save_interval=2000 \
+    --weight_loader.params_path=/mnt/mnt/data/FPF_workspace/checkpoints/pi05_base/params \
+    --num_workers=32 \
+    --fsdp_devices=8 \
+    --overwrite
+```
+
+以上六条命令是六次独立训练。每次训练都从命令中 `--weight_loader.params_path` 指定的同一个基础模型开始：
 
 ```text
-/data/openpi/checkpoints/pi05_teleavatar/pi05_teleavatar_collect_food/
-/data/openpi/checkpoints/pi05_teleavatar/pi05_teleavatar_fold_towels/
-/data/openpi/checkpoints/pi05_teleavatar/pi05_teleavatar_pick_flowers/
-/data/openpi/checkpoints/pi05_teleavatar/pi05_teleavatar_pick_up_paper_rolls/
-/data/openpi/checkpoints/pi05_teleavatar/pi05_teleavatar_pick_up_trash/
-/data/openpi/checkpoints/pi05_teleavatar/pi05_teleavatar_stack_blocks/
+/mnt/mnt/data/FPF_workspace/checkpoints/pi05_base/params
+```
+
+如果基础模型存放在其他位置，必须同步修改六条命令中的 `--weight_loader.params_path`。六次训练不从前一个任务的 checkpoint 继续，也不使用前一个任务的 `resume`。
+
+训练日志和 checkpoint 默认保存在仓库下的 `checkpoints` 目录，例如：
+
+```text
+/mnt/mnt/data/lingyu/openpi/checkpoints/pi05_teleavatar/finetune_collect_food_pi05/
+/mnt/mnt/data/lingyu/openpi/checkpoints/pi05_teleavatar/finetune_fold_towels_pi05/
+/mnt/mnt/data/lingyu/openpi/checkpoints/pi05_teleavatar/finetune_pick_flowers_pi05/
+/mnt/mnt/data/lingyu/openpi/checkpoints/pi05_teleavatar/finetune_pick_up_paper_rolls_pi05/
+/mnt/mnt/data/lingyu/openpi/checkpoints/pi05_teleavatar/finetune_pick_up_trash_pi05/
+/mnt/mnt/data/lingyu/openpi/checkpoints/pi05_teleavatar/finetune_stack_blocks_pi05/
 ```
 
 官方 OpenPI 的通用示例通常会先运行 `compute_norm_stats.py`，但本项目的六个数据集已经包含各自的 `norm_stats.json`，所以这里直接使用数据集内已有统计量；`--overwrite` 会覆盖同名实验目录下的已有结果。训练流程参考官方 [Fine-Tuning Base Models on Your Own Data](https://github.com/Physical-Intelligence/openpi#fine-tuning-base-models-on-your-own-data)。
